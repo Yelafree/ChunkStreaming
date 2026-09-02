@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "TimerManager.h"
+#include "UObject/WeakObjectPtr.h"
 #include "ChunkEnemyManager.generated.h"
 
 /** 单个敌人的"家"记录（占位收编后由管理器接管生命周期）。 */

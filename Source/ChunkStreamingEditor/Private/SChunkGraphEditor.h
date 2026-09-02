@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/WeakObjectPtr.h"
 #include "ChunkTypes.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Views/SListView.h"

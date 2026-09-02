@@ -3,6 +3,7 @@
 #include "Editor.h"
 #include "EditorLevelUtils.h"
 #include "IAssetTools.h"
+#include "AssetToolsModule.h"
 #include "PackageTools.h"
 #include "Engine/Level.h"
 #include "Engine/LevelStreaming.h"
@@ -593,10 +594,15 @@ void SChunkGraphEditor::RebuildValidation()
 
 void SChunkGraphEditor::DoNewAsset()
 {
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 1
+	IAssetTools& AssetTools = IAssetTools::Get();
+#else
+	IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools").Get();
+#endif
 	FString PkgName, AssetName;
-	IAssetTools::Get().CreateUniqueAssetName(TEXT("/Game/ChunkStreaming/ChunkGraph_Main"), TEXT(""), PkgName, AssetName);
+	AssetTools.CreateUniqueAssetName(TEXT("/Game/ChunkStreaming/ChunkGraph_Main"), TEXT(""), PkgName, AssetName);
 	UChunkGraphAsset* NewAsset = Cast<UChunkGraphAsset>(
-		IAssetTools::Get().CreateAsset(AssetName, TEXT("/Game/ChunkStreaming"), UChunkGraphAsset::StaticClass(), nullptr));
+		AssetTools.CreateAsset(AssetName, TEXT("/Game/ChunkStreaming"), UChunkGraphAsset::StaticClass(), nullptr));
 	if (NewAsset)
 	{
 		SetAsset(NewAsset);

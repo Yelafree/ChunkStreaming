@@ -119,7 +119,7 @@ public:
 						// 起点：鼠标投影到源节点边缘（鼠标在源节点内时用按下点）——起点永远贴在节点边缘
 						// 终点：鼠标当前位置（绝对坐标，与节点几何同系）
 						const FVector2D SrcMin(GS->AW->Geometry.AbsolutePosition);
-						const FVector2D SrcMax(GS->AW->Geometry.AbsolutePosition + GS->AW->Geometry.GetLocalSize());
+						const FVector2D SrcMax(FVector2D(GS->AW->Geometry.AbsolutePosition) + FVector2D(GS->AW->Geometry.GetLocalSize()));
 						FVector2D Start = ChunkEdgeDraw::ClampToRect(D.MouseScreenPos, SrcMin, SrcMax);
 						if (ChunkEdgeDraw::IsInside(D.MouseScreenPos, SrcMin, SrcMax))
 						{
@@ -127,8 +127,10 @@ public:
 						}
 						const FVector2D End = D.MouseScreenPos;
 						const FVector2D Dir = End - Start;
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 2
 						DP.StartTangent = Dir;
 						DP.EndTangent = Dir;
+#endif
 						static int32 PreviewCounter = 0;
 						if ((++PreviewCounter % 5) == 1)
 						{
@@ -155,9 +157,9 @@ private:
 			Params.AssociatedPin2 = GB.Node->GetInPin();
 		}
 		const FVector2D MinA(GA.AW->Geometry.AbsolutePosition);
-		const FVector2D MaxA(GA.AW->Geometry.AbsolutePosition + GA.AW->Geometry.GetLocalSize());
+		const FVector2D MaxA(FVector2D(GA.AW->Geometry.AbsolutePosition) + FVector2D(GA.AW->Geometry.GetLocalSize()));
 		const FVector2D MinB(GB.AW->Geometry.AbsolutePosition);
-		const FVector2D MaxB(GB.AW->Geometry.AbsolutePosition + GB.AW->Geometry.GetLocalSize());
+		const FVector2D MaxB(FVector2D(GB.AW->Geometry.AbsolutePosition) + FVector2D(GB.AW->Geometry.GetLocalSize()));
 		// 最近边缘点对：各自中心投影到对方矩形
 		FVector2D PA = ChunkEdgeDraw::ClampToRect((MinB + MaxB) * 0.5f, MinA, MaxA);
 		FVector2D PB = ChunkEdgeDraw::ClampToRect((MinA + MaxA) * 0.5f, MinB, MaxB);

@@ -1,6 +1,7 @@
 #include "ChunkBackgroundLayerComponent.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Kismet/GameplayStatics.h"
 

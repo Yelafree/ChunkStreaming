@@ -1,7 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/WeakObjectPtr.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "TimerManager.h"
 #include "ChunkStreamingSubsystem.generated.h"
 
 class UChunkGraphAsset;

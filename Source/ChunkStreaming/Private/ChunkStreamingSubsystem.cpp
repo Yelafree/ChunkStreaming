@@ -10,12 +10,28 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/LatentActionManager.h"
+#include "TimerManager.h"
 #include "LatentActions.h"
 #include "DrawDebugHelpers.h"
 
 #include "ChunkGraphAsset.h"
 #include "ChunkStreamingSettings.h"
 #include "ChunkStateStore.h"
+
+// ---- UE 版本兼容：LevelStreaming 状态 API（5.2+ 重构为 ELevelStreamingState/GetLevelStreamingState） ----
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION < 2
+	#define CHUNK_LSTATE_TYPE ULevelStreaming::ECurrentState
+	#define CHUNK_LSTATE_LOADING ULevelStreaming::ECurrentState::Loading
+	#define CHUNK_LSTATE_UNLOADED ULevelStreaming::ECurrentState::Unloaded
+	#define CHUNK_LSTATE_FAILED ULevelStreaming::ECurrentState::FailedToLoad
+	#define CHUNK_GET_LSTATE(SL) ((SL)->GetCurrentState())
+#else
+	#define CHUNK_LSTATE_TYPE ELevelStreamingState
+	#define CHUNK_LSTATE_LOADING ELevelStreamingState::Loading
+	#define CHUNK_LSTATE_UNLOADED ELevelStreamingState::Unloaded
+	#define CHUNK_LSTATE_FAILED ELevelStreamingState::FailedToLoad
+	#define CHUNK_GET_LSTATE(SL) ((SL)->GetLevelStreamingState())
+#endif
 
 static TWeakObjectPtr<UChunkStreamingSubsystem> GActiveChunkStreamingSubsystem;
 
@@ -419,7 +435,7 @@ void UChunkStreamingSubsystem::UpdateStreaming()
 			{
 				continue;
 			}
-			const ELevelStreamingState LState = SL->GetLevelStreamingState();
+			const CHUNK_LSTATE_TYPE LState = CHUNK_GET_LSTATE(SL);
 			if (SL->IsLevelLoaded())
 			{
 				if (UnloadingChunks.Contains(Info.LevelName))
@@ -445,7 +461,7 @@ void UChunkStreamingSubsystem::UpdateStreaming()
 					UE_LOG(LogTemp, Log, TEXT("[ChunkStreaming] 认领引擎加载的区块 %s%s"), *Info.LevelName.ToString(), bWasLoading ? TEXT("（加载完成）") : TEXT(""));
 				}
 			}
-			else if (LState == ELevelStreamingState::Loading)
+			else if (LState == CHUNK_LSTATE_LOADING)
 			{
 				if (!LoadingChunks.Contains(Info.LevelName) && !UnloadingChunks.Contains(Info.LevelName))
 				{
@@ -453,7 +469,7 @@ void UChunkStreamingSubsystem::UpdateStreaming()
 					UE_LOG(LogTemp, Log, TEXT("[ChunkStreaming] 跟随引擎加载中的区块 %s"), *Info.LevelName.ToString());
 				}
 			}
-			else if (LState == ELevelStreamingState::Unloaded)
+			else if (LState == CHUNK_LSTATE_UNLOADED)
 			{
 				// 反向对账：引擎侧已卸载而我们仍记账（保持状态一致）
 				if (UnloadingChunks.Remove(Info.LevelName) > 0)
@@ -464,7 +480,7 @@ void UChunkStreamingSubsystem::UpdateStreaming()
 				LoadedChunks.Remove(Info.LevelName);
 				LoadedBackgrounds.Remove(Info.LevelName);
 			}
-			else if (LState == ELevelStreamingState::FailedToLoad)
+			else if (LState == CHUNK_LSTATE_FAILED)
 			{
 				LoadingChunks.Remove(Info.LevelName);
 				LoadedChunks.Remove(Info.LevelName);
@@ -850,7 +866,7 @@ void UChunkStreamingSubsystem::StartLoadChunk(FName ChunkName)
 		}
 		return;
 	}
-	if (SL->GetLevelStreamingState() == ELevelStreamingState::Loading)
+	if (CHUNK_GET_LSTATE(SL) == CHUNK_LSTATE_LOADING)
 	{
 		// 引擎已在加载（如 Open Level 后的初始异步加载）：跟随，不重复请求
 		LoadingChunks.Add(ChunkName);

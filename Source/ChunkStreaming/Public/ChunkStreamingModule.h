@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleInterface.h"
+#include "HAL/IConsoleManager.h"
 
 /**
  * ChunkStreaming 运行时模块：负责注册/注销控制台命令

@@ -4,7 +4,13 @@
 #include "InputCoreTypes.h"
 #include "Framework/Application/SlateApplication.h"
 #include "SGraphPanel.h"
+#if ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION < 1
+#include "EditorStyleSet.h"
+#define CHUNK_APPSTYLE FEditorStyle
+#else
 #include "Styling/AppStyle.h"
+#define CHUNK_APPSTYLE FAppStyle
+#endif
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
@@ -75,12 +81,12 @@ void SChunkGraphNode::UpdateGraphNode()
 		.VAlign(VAlign_Center)
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("Graph.StateNode.Body"))
+			.BorderImage(CHUNK_APPSTYLE::GetBrush("Graph.StateNode.Body"))
 			.Padding(0)
 			.BorderBackgroundColor(this, &SChunkGraphNode::GetBorderBackgroundColor)
 			[
 				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("Graph.StateNode.ColorSpill"))
+				.BorderImage(CHUNK_APPSTYLE::GetBrush("Graph.StateNode.ColorSpill"))
 				.BorderBackgroundColor(TitleShadowColor)
 				.HAlign(HAlign_Center)
 				.VAlign(VAlign_Center)
@@ -447,9 +453,9 @@ const FSlateBrush* SChunkGraphNode::GetNameIcon() const
 {
 	if (ChunkGraphNode && ChunkGraphNode->Category == EChunkCategory::Background)
 	{
-		return FAppStyle::GetBrush("Graph.ConduitNode.Icon");
+		return CHUNK_APPSTYLE::GetBrush("Graph.ConduitNode.Icon");
 	}
-	return FAppStyle::GetBrush("Graph.StateNode.Icon");
+	return CHUNK_APPSTYLE::GetBrush("Graph.StateNode.Icon");
 }
 
 TSharedPtr<SChunkGraphNode> SChunkGraphNode::FindChunkNode(FName ChunkName) const
