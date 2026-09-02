@@ -1,0 +1,437 @@
+#include "ChunkGraphBuilder.h"
+
+#include "Editor.h"
+#include "Engine/Level.h"
+#include "Engine/LevelStreaming.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "Components/ActorComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Internationalization/Text.h"
+
+#include "ChunkGraphAsset.h"
+
+void FChunkGraphBuilder::CollectStreamingLevelBounds(UWorld* World, TMap<FName, FBox>& OutBounds, TArray<FName>& OutMissingLevels)
+{
+	OutBounds.Reset();
+	OutMissingLevels.Reset();
+	if (!World)
+	{
+		return;
+	}
+	for (ULevelStreaming* SL : World->GetStreamingLevels())
+	{
+		if (!SL)
+		{
+			continue;
+		}
+		const FName PkgName = FName(*SL->GetWorldAssetPackageName());
+		if (PkgName.IsNone())
+		{
+			continue;
+		}
+		ULevel* Level = SL->GetLoadedLevel();
+		if (!Level)
+		{
+			OutMissingLevels.Add(PkgName);
+			continue;
+		}
+		// 判定范围优先使用"可碰撞物体"的范围（更贴合实际可玩区域）；
+		// 没有可碰撞物体的块（如纯背景块）退化为全 Actor 范围
+		FBox CollisionBounds(ForceInit);
+		FBox FullBounds(ForceInit);
+		bool bHasCollision = false;
+		bool bHasAny = false;
+		for (AActor* Actor : Level->Actors)
+		{
+			if (!Actor)
+			{
+				continue;
+			}
+			// 可碰撞组件范围
+			bool bActorCollision = false;
+			FBox ActorCollision(ForceInit);
+			for (UActorComponent* Comp : Actor->GetComponents())
+			{
+				UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Comp);
+				if (!Prim || !Prim->IsCollisionEnabled())
+				{
+					continue;
+				}
+				ActorCollision += Prim->Bounds.GetBox();
+				bActorCollision = true;
+			}
+			if (bActorCollision)
+			{
+				CollisionBounds += ActorCollision;
+				bHasCollision = true;
+			}
+			// 全量范围（兜底）
+			FVector Origin, Extent;
+			Actor->GetActorBounds(false, Origin, Extent);
+			FullBounds += FBox::BuildAABB(Origin, Extent);
+			bHasAny = true;
+		}
+		if (bHasCollision)
+		{
+			OutBounds.Add(PkgName, CollisionBounds);
+		}
+		else if (bHasAny)
+		{
+			OutBounds.Add(PkgName, FullBounds);
+		}
+		else
+		{
+			OutMissingLevels.Add(PkgName);
+		}
+	}
+}
+
+EChunkCategory FChunkGraphBuilder::SuggestCategory(FName LevelName)
+{
+	const FString Name = LevelName.ToString();
+	if (Name.Contains(TEXT("/BG_")) || Name.StartsWith(TEXT("BG_")) || Name.Contains(TEXT("BKG")))
+	{
+		return EChunkCategory::Background;
+	}
+	return EChunkCategory::Gameplay;
+}
+
+FVector2D FChunkGraphBuilder::ProjectRange(const FBox& Bounds, EAxis::Type Axis)
+{
+	if (Axis == EAxis::Y)
+	{
+		return FVector2D(Bounds.Min.Y, Bounds.Max.Y);
+	}
+	return FVector2D(Bounds.Min.X, Bounds.Max.X);
+}
+
+void FChunkGraphBuilder::RefreshChunkInfos(UChunkGraphAsset* Asset, UWorld* World)
+{
+	if (!Asset || !World)
+	{
+		return;
+	}
+	TMap<FName, FBox> Bounds;
+	TArray<FName> Missing;
+	CollectStreamingLevelBounds(World, Bounds, Missing);
+
+	for (const auto& Pair : Bounds)
+	{
+		FChunkInfo* Existing = nullptr;
+		for (FChunkInfo& Info : Asset->Chunks)
+		{
+			if (Info.LevelName == Pair.Key)
+			{
+				Existing = &Info;
+				break;
+			}
+		}
+		if (Existing)
+		{
+			if (Existing->bAutoBounds)
+			{
+				Existing->WorldBounds = Pair.Value;
+				Existing->XRange = ProjectRange(Pair.Value, Asset->MovementAxis.GetValue());
+			}
+		}
+		else
+		{
+			FChunkInfo NewInfo;
+			NewInfo.LevelName = Pair.Key;
+			NewInfo.DisplayName = Pair.Key.ToString();
+			const int32 LastSlash = NewInfo.DisplayName.Find(TEXT("/"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+			if (LastSlash != INDEX_NONE)
+			{
+				NewInfo.DisplayName = NewInfo.DisplayName.RightChop(LastSlash + 1);
+			}
+			NewInfo.WorldBounds = Pair.Value;
+			NewInfo.XRange = ProjectRange(Pair.Value, Asset->MovementAxis.GetValue());
+			NewInfo.Category = SuggestCategory(Pair.Key);
+			Asset->Chunks.Add(NewInfo);
+		}
+	}
+	Asset->MarkPackageDirty();
+}
+
+bool FChunkGraphBuilder::IsAdjacent(const UChunkGraphAsset* Asset, const FChunkInfo& A, const FChunkInfo& B)
+{
+	const float Tol = Asset->ConnectionTolerance;
+	const bool bOverlap = (A.XRange.X < B.XRange.Y && B.XRange.X < A.XRange.Y);
+	const bool bGapA = FMath::Abs(A.XRange.Y - B.XRange.X) <= Tol;
+	const bool bGapB = FMath::Abs(B.XRange.Y - A.XRange.X) <= Tol;
+	if (!(bOverlap || bGapA || bGapB))
+	{
+		return false;
+	}
+	// 横向（垂直于移动轴的方向）必须相近：防止不同横向排布/不同 Z 高度的房间被自动连接
+	const bool bAxisIsY = (Asset->MovementAxis.GetValue() == EAxis::Y);
+	const float HorizontalA = bAxisIsY ? A.WorldBounds.GetCenter().X : A.WorldBounds.GetCenter().Y;
+	const float HorizontalB = bAxisIsY ? B.WorldBounds.GetCenter().X : B.WorldBounds.GetCenter().Y;
+	const bool bHClose = FMath::Abs(HorizontalA - HorizontalB) <= Tol;
+	const bool bZClose = FMath::Abs(A.WorldBounds.GetCenter().Z - B.WorldBounds.GetCenter().Z) <= Tol;
+	return bHClose && bZClose;
+}
+
+void FChunkGraphBuilder::AutoConnect(UChunkGraphAsset* Asset)
+{
+	if (!Asset)
+	{
+		return;
+	}
+
+	auto IsNode = [](const FChunkInfo& Info)
+	{
+		return Info.Category == EChunkCategory::Gameplay && !Info.LevelName.IsNone();
+	};
+
+	// 删除不再相邻的自动边
+	Asset->Connections.RemoveAll([&](const FChunkConnection& Conn)
+	{
+		if (!Conn.bAutoGenerated)
+		{
+			return false;
+		}
+		const FChunkInfo* A = Asset->FindChunkInfoPtr(Conn.FromLevel);
+		const FChunkInfo* B = Asset->FindChunkInfoPtr(Conn.ToLevel);
+		if (!A || !B)
+		{
+			return true; // 端点消失
+		}
+		return !IsAdjacent(Asset, *A, *B);
+	});
+
+	// 补缺失的自动边（仅玩法块之间）
+	for (int32 i = 0; i < Asset->Chunks.Num(); ++i)
+	{
+		if (!IsNode(Asset->Chunks[i]))
+		{
+			continue;
+		}
+		for (int32 j = i + 1; j < Asset->Chunks.Num(); ++j)
+		{
+			if (!IsNode(Asset->Chunks[j]))
+			{
+				continue;
+			}
+			const FChunkInfo& A = Asset->Chunks[i];
+			const FChunkInfo& B = Asset->Chunks[j];
+			if (!IsAdjacent(Asset, A, B))
+			{
+				continue;
+			}
+			if (Asset->HasConnection(A.LevelName, B.LevelName))
+			{
+				continue;
+			}
+			FChunkConnection Conn;
+			Conn.FromLevel = A.LevelName;
+			Conn.ToLevel = B.LevelName;
+			Conn.bAutoGenerated = true;
+			Asset->Connections.Add(Conn);
+		}
+	}
+	Asset->MarkPackageDirty();
+}
+
+void FChunkGraphBuilder::AutoAssignBackgrounds(UChunkGraphAsset* Asset)
+{
+	if (!Asset)
+	{
+		return;
+	}
+	for (FChunkInfo& BG : Asset->Chunks)
+	{
+		if (BG.Category != EChunkCategory::Background)
+		{
+			continue;
+		}
+		if (BG.bVisibleFromAll)
+		{
+			BG.VisibleFromChunks.Reset();
+			continue;
+		}
+		BG.VisibleFromChunks.Reset();
+		for (const FChunkInfo& Owner : Asset->Chunks)
+		{
+			if (Owner.Category != EChunkCategory::Gameplay)
+			{
+				continue;
+			}
+			const bool bOverlap = (BG.XRange.X < Owner.XRange.Y && Owner.XRange.X < BG.XRange.Y);
+			const bool bTouch = FMath::Abs(BG.XRange.X - Owner.XRange.Y) <= 1.f || FMath::Abs(Owner.XRange.X - BG.XRange.Y) <= 1.f;
+			if (bOverlap || bTouch)
+			{
+				BG.VisibleFromChunks.AddUnique(Owner.LevelName);
+			}
+		}
+	}
+	Asset->MarkPackageDirty();
+}
+
+TArray<FText> FChunkGraphBuilder::Validate(UChunkGraphAsset* Asset, UWorld* World)
+{
+	TArray<FText> Messages;
+	if (!Asset)
+	{
+		Messages.Add(FText::FromString(TEXT("No graph asset selected.")));
+		return Messages;
+	}
+
+	// 收集当前世界的流送关卡名
+	TSet<FName> WorldLevels;
+	if (World)
+	{
+		for (ULevelStreaming* SL : World->GetStreamingLevels())
+		{
+			if (SL)
+			{
+				WorldLevels.Add(FName(*SL->GetWorldAssetPackageName()));
+			}
+		}
+	}
+
+	for (const FChunkInfo& Info : Asset->Chunks)
+	{
+		if (Info.LevelName.IsNone())
+		{
+			Messages.Add(FText::FromString(TEXT("[Error] A chunk has an empty LevelName.")));
+			continue;
+		}
+		if (!Info.WorldBounds.IsValid)
+		{
+			Messages.Add(FText::Format(FText::FromString(TEXT("[Error] Chunk {0} has no valid bounds (empty level?).")), FText::FromName(Info.LevelName)));
+		}
+		if (World && !WorldLevels.Contains(Info.LevelName))
+		{
+			Messages.Add(FText::Format(FText::FromString(TEXT("[Warning] Chunk {0} is not a streaming level of the current world.")), FText::FromName(Info.LevelName)));
+		}
+	}
+
+	// 玩法块：孤儿/重叠/重复边
+	TArray<FName> GameplayChunks;
+	for (const FChunkInfo& Info : Asset->Chunks)
+	{
+		if (Info.Category == EChunkCategory::Gameplay)
+		{
+			GameplayChunks.Add(Info.LevelName);
+		}
+	}
+	for (const FName& C : GameplayChunks)
+	{
+		TArray<FName> Neighbors;
+		Asset->GetNeighbors(C, Neighbors);
+		if (Neighbors.Num() == 0)
+		{
+			Messages.Add(FText::Format(FText::FromString(TEXT("[Info] Gameplay chunk {0} is isolated: teleport-only, unloaded when player leaves.")), FText::FromName(C)));
+		}
+	}
+
+	for (int32 i = 0; i < Asset->Chunks.Num(); ++i)
+	{
+		const FChunkInfo& A = Asset->Chunks[i];
+		if (A.Category != EChunkCategory::Gameplay)
+		{
+			continue;
+		}
+		for (int32 j = i + 1; j < Asset->Chunks.Num(); ++j)
+		{
+			const FChunkInfo& B = Asset->Chunks[j];
+			if (B.Category != EChunkCategory::Gameplay)
+			{
+				continue;
+			}
+			// 包围盒相交：不规则地图形状下 AABB 重叠在所难免——运行时按"相连关系+进入顺序+范围最小"判定，
+			// 这里仅提示（Info），不再报错
+			if (A.WorldBounds.Intersect(B.WorldBounds))
+			{
+				Messages.Add(FText::Format(FText::FromString(TEXT("[Info] Chunk {0} and {1} bounds intersect (irregular shapes OK): runtime decides by connections & entry order.")),
+					FText::FromName(A.LevelName), FText::FromName(B.LevelName)));
+			}
+		}
+	}
+
+	for (int32 i = 0; i < Asset->Connections.Num(); ++i)
+	{
+		for (int32 j = i + 1; j < Asset->Connections.Num(); ++j)
+		{
+			const FChunkConnection& A = Asset->Connections[i];
+			const FChunkConnection& B = Asset->Connections[j];
+			// 无向：同一条边不管方向如何只允许出现一次
+			const bool bSamePair = (A.FromLevel == B.FromLevel && A.ToLevel == B.ToLevel) ||
+				(A.FromLevel == B.ToLevel && A.ToLevel == B.FromLevel);
+			if (bSamePair)
+			{
+				Messages.Add(FText::Format(FText::FromString(TEXT("[Error] Duplicate connection between {0} and {1}.")),
+					FText::FromName(A.FromLevel), FText::FromName(A.ToLevel)));
+				break;
+			}
+		}
+	}
+
+	// 背景块：无引用且非全局
+	for (const FChunkInfo& BG : Asset->Chunks)
+	{
+		if (BG.Category != EChunkCategory::Background)
+		{
+			continue;
+		}
+		if (!BG.bVisibleFromAll && BG.VisibleFromChunks.Num() == 0)
+		{
+			Messages.Add(FText::Format(FText::FromString(TEXT("[Error] Background chunk {0} is never referenced (no VisibleFromChunks, not global).")),
+				FText::FromName(BG.LevelName)));
+		}
+	}
+
+	// 连通分量检查（BFS）
+	if (GameplayChunks.Num() > 0)
+	{
+		TSet<FName> Visited;
+		TArray<TArray<FName>> Components;
+		for (const FName& Start : GameplayChunks)
+		{
+			if (Visited.Contains(Start))
+			{
+				continue;
+			}
+			TArray<FName> Component;
+			TArray<FName> Queue;
+			Queue.Add(Start);
+			Visited.Add(Start);
+			while (Queue.Num() > 0)
+			{
+				const FName Cur = Queue.Pop(false);
+				Component.Add(Cur);
+				TArray<FName> Neighbors;
+				Asset->GetNeighbors(Cur, Neighbors);
+				for (const FName& N : Neighbors)
+				{
+					if (!Visited.Contains(N))
+					{
+						Visited.Add(N);
+						Queue.Add(N);
+					}
+				}
+			}
+			Components.Add(Component);
+		}
+		if (Components.Num() > 1)
+		{
+			for (int32 i = 1; i < Components.Num(); ++i)
+			{
+				if (Components[i].Num() < 2)
+				{
+					continue; // 单块组件 = 隔离区块（仅传送进入，已按规则允许）
+				}
+				Messages.Add(FText::Format(FText::FromString(TEXT("[Warning] Disconnected component: {0}")),
+					FText::FromString(Components[i][0].ToString())));
+			}
+		}
+	}
+
+	if (Messages.Num() == 0)
+	{
+		Messages.Add(FText::FromString(TEXT("Validation passed.")));
+	}
+	return Messages;
+}

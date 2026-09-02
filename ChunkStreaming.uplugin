@@ -1,0 +1,29 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "Chunk Streaming",
+	"Description": "Graph-driven level streaming for side-scroller games: chunk graph asset, runtime streaming manager, player chunk detection, teleport node, enemy state persistence and background chunk support.",
+	"Category": "Level Streaming",
+	"CreatedBy": "ProjectRainWalker",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "ChunkStreaming",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "ChunkStreamingEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
+		}
+	]
+}
