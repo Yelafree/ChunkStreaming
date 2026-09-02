@@ -1,4 +1,5 @@
 #include "SChunkGraphNode.h"
+#include "Misc/EngineVersionComparison.h"
 
 #include "EdGraph/EdGraph.h"
 #include "InputCoreTypes.h"

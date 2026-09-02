@@ -1,4 +1,5 @@
 #include "ChunkGraphSchema.h"
+#include "Misc/EngineVersionComparison.h"
 
 #include "ConnectionDrawingPolicy.h"
 #include "EdGraph/EdGraph.h"

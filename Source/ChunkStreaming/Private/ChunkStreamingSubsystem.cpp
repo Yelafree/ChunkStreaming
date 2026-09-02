@@ -1,4 +1,5 @@
 #include "ChunkStreamingSubsystem.h"
+#include "Misc/EngineVersionComparison.h"
 
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"

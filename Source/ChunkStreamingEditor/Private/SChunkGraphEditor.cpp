@@ -1,4 +1,5 @@
 #include "SChunkGraphEditor.h"
+#include "Misc/EngineVersionComparison.h"
 
 #include "Editor.h"
 #include "EditorLevelUtils.h"
