@@ -1,8 +1,8 @@
 # Chunk Streaming 插件使用说明
 
-> 版本：1.0.0（UE 5.4）
+> 版本：1.0.1（支持 UE 5.0 / 5.4 / 5.5 / 5.6）
 > 位置：`Plugins/ChunkStreaming`
-> 功能：图驱动的关卡流送 —— 子关卡分块、按连接图动态加载/卸载、跨区块瞬移、敌人状态持久化、背景装饰块。
+> 功能：图驱动的关卡流送 —— 子关卡分块、按连接图动态加载/卸载、跨区块瞬移、敌人占位收编与状态持久化、背景装饰块。
 
 ---
 
@@ -16,7 +16,8 @@
 | **自动判断** | 区块包围盒、连接关系、背景引用全部由编辑器工具自动计算，无需手动填写 |
 | **玩家进入判定** | 自动检测玩家所在区块并广播事件（基于玩家坐标，与流送判断分离） |
 | **跨区块瞬移** | `Teleport To Chunk` 节点：先预加载目标区块再传送，过渡期间不卸载旧区块 |
-| **敌人状态持久化** | 区块卸载时自动保存敌人状态（血量/死亡/位置），重新进入按状态恢复 |
+| **敌人占位收编** | 编辑器里像摆普通 Actor 一样摆敌人，运行时自动转为“生成记录”并自我销毁（不常驻）；按距离生成/回收，击杀 = 永久死亡 |
+| **敌人状态持久化** | 活体状态自动保存（血量/死亡/位置/数值变量），重新生成按状态恢复，可跨区块追击 |
 | **背景装饰块** | 无逻辑的背景块可被多个玩法块共享（OR 加载），支持视差滚动 |
 
 ![插件架构总览](ChunkStreaming/01-架构总览.png)
@@ -66,6 +67,7 @@
 - 前方区块自动预加载，身后区块自动卸载（身后保留 1 块可回头）
 - 控制台输入 `ChunkStream.Debug 1` 可看到区块线框与 HUD 信息
 - 蓝图里绑定 `On Player Entered Chunk` 事件做区域玩法
+- 若用了敌人系统：地图上摆好敌人 → 测试“靠近生成 / 远离回收 / 击杀消失”；击杀后 Open Level 重进，敌人不复活（永久死亡）
 
 ---
 
@@ -105,6 +107,10 @@
 > 中间栏的"连接列表 / Add connection"仍可手动添加边（在节点图上拖圆点更直观）。
 > **旧资产自动升级**：旧版单向边会全部视为双向（无向语义），无需重新连接；重新点一次 Save 即可。
 
+实际编辑器画面（本项目实测，无向连接 + 背景引用线）：
+
+![连接图面板实际界面](ChunkStreaming/07-连接图面板.png)
+
 ### 中间栏：详情与连接
 
 - **Category**：Gameplay（玩法）/ Background（背景装饰）/ Persistent（常驻）
@@ -143,6 +149,8 @@
 ---
 
 ## 5. 运行时参数（Project Settings → Chunk Streaming）
+
+![项目设置实际界面](ChunkStreaming/08-项目设置.png)
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
@@ -220,6 +228,30 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 
 > 注意：加载完成前角色保持原地（可能还在半空/出生点），建议等待期间暂停角色移动与重力，输出触发后再恢复。
 
+### 敌人占位收编（推荐：摆敌人，不常驻）
+
+**工作流**：在编辑器里像摆普通 Actor 一样摆放敌人（放在“家”附近即可），运行时它们**不会常驻**——敌人父类挂 `ChunkEnemySpawnerComponent` 后，系统在 PIE 启动时把它们**收编为生成记录**并自我销毁，之后由 `ChunkEnemyManager`（GameInstance 级）按玩家距离管理：
+
+| 阶段 | 行为 |
+|---|---|
+| **收编** | 敌人 BeginPlay → 延迟一帧等玩家 Possess → **玩家身上自动豁免** → 注册生成记录，占位自我销毁（不占 Tick、不常驻内存） |
+| **生成** | 玩家距记录“家” < `EnemySpawnDistance` → 生成活体（生成在**最后位置**而非出生点，**可跨区块追击**） |
+| **回收** | 活体距玩家 > `EnemyDespawnDistance` → 捕获状态后回收（**不记死亡**，回来重新生成、血量位置延续） |
+| **击杀** | 活体死亡 → **永久死亡**（GameInstance 级账本，跨 Open Level、跨区块卸载保留，不再生成） |
+| **重置** | 玩家死亡 / 坐火 → 调 `Reset Enemy States`：清空全部账本，敌人以全新状态重新加载 |
+
+**组件配置**（挂在敌人父类上，一处生效全部敌人）：
+
+- `ComponentsToSave`：用“选取组件”直接选中要保存数值的组件（如伤害数值组件）——该组件（以及按 Tag / 组件类匹配的组件）的所有**数值型 UPROPERTY 变量**（float/int/bool/枚举/TMap/TArray/结构体等）自动打包保存恢复
+- `VariablesToSave`：变量名白名单，留空 = 反射自动收集全部可保存数值变量
+- `EnemyKey`：记录键，一般无需手动改（按敌人类 + 摆放位置自动生成）
+- `OnEnemyRespawned`（蓝图事件）：敌人被再次生成时广播，可做最大血量上限同步 / 难度缩放
+- 敌人数值放在**自定义组件**而不是敌人自身时也一样生效——该组件被 `ComponentsToSave` 引用后，其数值会纳入状态保存
+
+![敌人收编组件配置（BP_EnemiesFather 父类实测）](ChunkStreaming/10-敌人收编组件配置.png)
+
+> **参数**（`Project Settings → Chunk Streaming` → Enemy Spawning 组）：`EnemySpawnDistance` / `EnemyDespawnDistance`（建议几百单位以上，且回收距离 > 生成距离留出迟滞，避免边界抖动）、`EnemyCheckInterval`（账本扫描周期）、`Enable Enemy Z Check` / `Enemy Z Delay Distance` / `Enemy Z Delay Seconds` / `Enemy Z Immediate Distance`（**Z 轴高度层**：玩家与敌人高度差过大时延迟/立即回收，回到同一高度层再生成——适合上下层房间各有敌人的地图）
+
 ### 敌人状态（蓝图侧）
 
 **挂 `ChunkEnemyStateComponent` 即可自动保存（推荐，无需实现接口）**：
@@ -237,6 +269,11 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 - 特殊敌人可在蓝图里实现 **Chunk Saveable** 接口（Save Chunk State / Restore Chunk State / Get Enemy Id），写自定义状态
 - 状态存在 **ChunkStateStore**（GameInstance 级），可调用 `Get All States` / `Set All States` 并入你的存档系统（如 EasyMultiSave）
 
+### 敌人重置与重生事件
+
+- **`Reset Enemy States`**（静态节点，蓝图里搜索 "Reset Enemy States"）：把全部敌人的账本恢复初始——清空死亡标记、数值与位置 → 敌人以**全新状态**重新加载。在玩家死亡重生 / 坐火流程调用。调用瞬间**已在场的活体保持现状**（冻结语义：不回收、不生成、不误判死亡），随关卡重启自然消失——不会突兀复位
+- **`ChunkEnemySpawnerComponent → OnEnemyRespawned`**：敌人被再次生成时广播，可在这里同步最大血量上限、做难度缩放等
+
 ### 背景视差
 
 背景块内挂 **ChunkBackgroundLayerComponent**：
@@ -248,6 +285,8 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 ---
 
 ## 7. 调试
+
+![PIE 运行时流送可视化（ChunkStream.Debug 1）](ChunkStreaming/09-运行时流送可视化.png)
 
 | 命令 | 说明 |
 |---|---|
@@ -277,11 +316,11 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 
 ![边界判定与双判定分离](ChunkStreaming/06-边界判定.png)
 
-**Q: 敌人重进区块后满血复活？**
-检查敌人是否挂了 `ChunkEnemyStateComponent`（或实现了 Chunk Saveable 接口）；确认敌人血量修改的是组件上的 `Health` 字段（或自己实现接口同步）。
+**Q: 敌人脱战后回来血量/位置不对（或满血复活）？**
+收编后活体按“最后位置 + 延续状态”管理：确认敌人父类挂了 `ChunkEnemySpawnerComponent`，且 `ComponentsToSave` 选中的组件的变量是 UPROPERTY 可保存类型。脱战回收**不记死亡**是正常设计；希望敌人回来是全新状态 → 调用 `Reset Enemy States`。
 
 **Q: 想让已死亡的敌人重新出现？**
-调用 `ChunkStateStore → Clear Chunk State (区块名)` 后重新进入该区块。
+调 `Reset Enemy States`（全部敌人），或 `ChunkStateStore → Clear Chunk State (区块名)`（单个区块）后重新进入该区块。
 
 **Q: 背景块没显示？**
 检查：区块类型是否为 Background；是否有玩法块引用它（或勾选 Visible From All）；Validate 是否报"never referenced"。
@@ -329,7 +368,10 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 - **碰撞范围**：区块 XRange 优先由可碰撞组件（碰撞开启的 PrimitiveComponent）包围盒并集生成，无碰撞时退化为全 Actor 范围
 - **自动连边空间约束**：相邻判定除 X 区间外还要求 Y/Z 中心距离在容差内（不同 Y/Z 的房间不会被自动连接）
 - **重叠判定**：3D 包围盒包含优先，多个包含时取范围最小；X 投影重叠但空间分离（不同 Y/Z 房间）不视为问题（校验仅 Info）
+- **敌人账本（GameInstance 级）**：占位 BeginPlay → 延迟一帧等玩家 Possess → 玩家/已收编者豁免 → `RegisterSpawn` 收编并自我销毁；周期性按“玩家 ↔ 家距离”生成/回收（判定与生成点都用**最后位置**，与脱节问题无关的旧逻辑不再回出生点）
+- **击杀上报在组件 EndPlay**（reason = Destroyed 且带活体 Tag）：`OnDestroyed` 广播晚于组件 EndPlay，若在 OnDestroyed 里上报会因组件自解绑永不触发
+- **Reset 冻结语义**：`Reset Enemy States` 只清账本（bDead / SavedState / 位置回初始）并置冻结，在场活体保持现状直到关卡重启自然失效；冻结期间不回收、不生成、不误判死亡
 
 ---
 
-*配图说明：本文档配图为示意图（非编辑器真实截图），用于说明架构、布局与机制；实际界面以编辑器内为准。*
+*配图说明：01–06 为机制示意图，用于说明架构与流程；07–10 为 UE 5.4 实测项目的编辑器真实截图（连接图面板 / 项目设置 / PIE 调试可视化 / 敌人收编组件配置）。实际界面以编辑器内为准。*
