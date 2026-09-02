@@ -107,10 +107,6 @@
 > 中间栏的"连接列表 / Add connection"仍可手动添加边（在节点图上拖圆点更直观）。
 > **旧资产自动升级**：旧版单向边会全部视为双向（无向语义），无需重新连接；重新点一次 Save 即可。
 
-实际编辑器画面（本项目实测，无向连接 + 背景引用线）：
-
-![连接图面板实际界面](ChunkStreaming/07-连接图面板.png)
-
 ### 中间栏：详情与连接
 
 - **Category**：Gameplay（玩法）/ Background（背景装饰）/ Persistent（常驻）
@@ -149,8 +145,6 @@
 ---
 
 ## 5. 运行时参数（Project Settings → Chunk Streaming）
-
-![项目设置实际界面](ChunkStreaming/08-项目设置.png)
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
@@ -248,8 +242,6 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 - `OnEnemyRespawned`（蓝图事件）：敌人被再次生成时广播，可做最大血量上限同步 / 难度缩放
 - 敌人数值放在**自定义组件**而不是敌人自身时也一样生效——该组件被 `ComponentsToSave` 引用后，其数值会纳入状态保存
 
-![敌人收编组件配置（BP_EnemiesFather 父类实测）](ChunkStreaming/10-敌人收编组件配置.png)
-
 > **参数**（`Project Settings → Chunk Streaming` → Enemy Spawning 组）：`EnemySpawnDistance` / `EnemyDespawnDistance`（建议几百单位以上，且回收距离 > 生成距离留出迟滞，避免边界抖动）、`EnemyCheckInterval`（账本扫描周期）、`Enable Enemy Z Check` / `Enemy Z Delay Distance` / `Enemy Z Delay Seconds` / `Enemy Z Immediate Distance`（**Z 轴高度层**：玩家与敌人高度差过大时延迟/立即回收，回到同一高度层再生成——适合上下层房间各有敌人的地图）
 
 ### 敌人状态（蓝图侧）
@@ -285,8 +277,6 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 ---
 
 ## 7. 调试
-
-![PIE 运行时流送可视化（ChunkStream.Debug 1）](ChunkStreaming/09-运行时流送可视化.png)
 
 | 命令 | 说明 |
 |---|---|
@@ -374,4 +364,4 @@ Teleport To Chunk (TargetChunk, TargetLocation)
 
 ---
 
-*配图说明：01–06 为机制示意图，用于说明架构与流程；07–10 为 UE 5.4 实测项目的编辑器真实截图（连接图面板 / 项目设置 / PIE 调试可视化 / 敌人收编组件配置）。实际界面以编辑器内为准。*
+*配图说明：本文档配图为示意图（非编辑器真实截图），用于说明架构、布局与机制；实际界面以编辑器内为准。*

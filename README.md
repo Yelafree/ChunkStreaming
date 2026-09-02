@@ -6,26 +6,6 @@
 
 ---
 
-## 截图
-
-**区块连接图编辑器**（无向连接：按住节点边缘拖到另一区块即相连，Alt+点击断线，Ctrl+点击断开全部）
-
-![区块连接图编辑器](imgs/graph-editor.jpg)
-
-**项目设置**（流送参数 + 敌人占位收编 + Z 轴高度层检测）
-
-![项目设置](imgs/project-settings.jpg)
-
-**PIE 运行时可视化**（包围盒 + 区块连接线，`ChunkStream.Debug 1`）
-
-![运行时流送可视化](imgs/runtime-viz.jpg)
-
-**敌人占位收编组件**（挂在敌人父类上：运行时把摆放的敌人转成 Spawner）
-
-![敌人收编组件配置](imgs/enemy-component.jpg)
-
----
-
 ## 核心特性
 
 ### 关卡流送
