@@ -31,6 +31,9 @@ struct FChunkEnemySpawnRecord
 
 	/** 活体回收时捕获的标记变量数据（重新生成时写回）。 */
 	TArray<uint8> SavedState;
+
+	/** Reset 后冻结：保持在场活体现状，不回收/不生成/不误判死亡；关卡重启（活体随世界销毁）后自动解除。 */
+	bool bFrozen = false;
 };
 
 /**
@@ -58,9 +61,19 @@ public:
 	/** 标记永久死亡（敌人死亡逻辑可调组件 MarkAsDead 触发）。 */
 	void MarkDead(const FString& Key);
 
-	/** 复活（调试/测试用）。 */
+	/** 复活单个（调试/测试用）。 */
 	void ClearDead(const FString& Key);
-	void ClearAll();
+
+	/**
+	 * 重置所有敌人的状态（死亡、保存的数值/位置全部清除；在场活体回收销毁不记死）。
+	 * 在"关卡重启"流程（玩家死亡重生、坐火/休息等）中调用，下次进入时敌人以全新状态重新加载。
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Chunk Enemy")
+	void ClearAllEnemyStates();
+
+	/** 蓝图入口：重置所有敌人状态（无需先获取管理器）。调用时机：玩家死亡/休息导致的关卡重启前。 */
+	UFUNCTION(BlueprintCallable, Category = "Chunk Enemy", meta = (WorldContext = "WorldContextObject", DisplayName = "Reset Enemy States"))
+	static void ResetEnemyStates(const UObject* WorldContextObject);
 
 	/** 检测生成/回收（由定时器调用）。 */
 	void TickSpawns();

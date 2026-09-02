@@ -42,6 +42,9 @@ bool UChunkEnemyManager::RegisterSpawn(const FString& Key, const FTransform& Hom
 	Rec.HomeLocation = HomeTransform.GetLocation();
 	Rec.HomeRotation = HomeTransform.Rotator();
 	Rec.EnemyClass = EnemyClass;
+	// 新世界收编 = 新周期开始：解除 Reset 冻结，旧活体引用清空（已随旧世界销毁）
+	Rec.bFrozen = false;
+	Rec.ActiveEnemy.Reset();
 	if (bNewRecord)
 	{
 		Rec.LastKnownLocation = Rec.HomeLocation;
@@ -76,12 +79,29 @@ void UChunkEnemyManager::ClearDead(const FString& Key)
 	}
 }
 
-void UChunkEnemyManager::ClearAll()
+void UChunkEnemyManager::ClearAllEnemyStates()
 {
 	for (auto& Pair : Records)
 	{
-		Pair.Value.bDead = false;
-		Pair.Value.ActiveEnemy.Reset();
+		FChunkEnemySpawnRecord& Rec = Pair.Value;
+		// 仅清除"账本"状态：死亡标记、已保存的数值/位置。
+		// 在场活体【保留】——它随关卡重启（世界销毁）自然消失，
+		// 避免"死亡瞬间调用 Reset 后敌人立刻消失"的突兀感（出戏）。
+		Rec.bDead = false;
+		Rec.SavedState.Reset();
+		Rec.LastKnownLocation = Rec.HomeLocation;
+		Rec.LastKnownRotation = Rec.HomeRotation;
+		Rec.bFrozen = true; // 冻结到关卡重启：期间保持在场活体现状
+	}
+	ZDelayStart.Reset();
+	UE_LOG(LogTemp, Log, TEXT("[ChunkEnemy] 已重置全部敌人账本状态（%d 条记录；在场活体保留至关卡重启）"), Records.Num());
+}
+
+void UChunkEnemyManager::ResetEnemyStates(const UObject* WorldContextObject)
+{
+	if (UChunkEnemyManager* M = Get(WorldContextObject))
+	{
+		M->ClearAllEnemyStates();
 	}
 }
 
@@ -117,6 +137,16 @@ void UChunkEnemyManager::TickSpawns()
 		if (Rec.bDead)
 		{
 			// 永久死亡：什么都不做（占位不会再生成）
+			continue;
+		}
+		if (Rec.bFrozen)
+		{
+			// 冻结（Reset 后）：保持现状——不回收、不生成、不把"活体随关卡重启销毁"误判为击杀。
+			// 活体随世界销毁后解除冻结，进入全新状态周期。
+			if (!Rec.ActiveEnemy.IsValid())
+			{
+				Rec.bFrozen = false;
+			}
 			continue;
 		}
 
@@ -230,10 +260,13 @@ void UChunkEnemyManager::TickSpawns()
 			{
 				// 打标记：组件识别自己是"活体"（不重复收编）
 				Spawned->Tags.AddUnique(FName(TEXT("ChunkEnemyActive")));
-				// 写回上次保存的标记变量（位置连续之外，数值也连续），并广播"再次加载"事件
-				if (Rec.SavedState.Num() > 0)
+				if (UChunkEnemySpawnerComponent* SC = Spawned->FindComponentByClass<UChunkEnemySpawnerComponent>())
 				{
-					if (UChunkEnemySpawnerComponent* SC = Spawned->FindComponentByClass<UChunkEnemySpawnerComponent>())
+					// 关键：活体继承占位记录 Key（活体自身名字每次 Spawn 递增，
+					// 若不继承，击杀后的 MarkDead 会找不到记录 → 敌人"复活"）
+					SC->SetSpawnKey(Pair.Key);
+					// 写回上次保存的标记变量（位置连续之外，数值也连续），并广播"再次加载"事件
+					if (Rec.SavedState.Num() > 0)
 					{
 						SC->ApplyState(Rec.SavedState);
 						SC->NotifyRespawned();

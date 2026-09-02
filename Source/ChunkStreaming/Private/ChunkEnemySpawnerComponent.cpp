@@ -99,9 +99,11 @@ void UChunkEnemySpawnerComponent::DeferredBeginPlay()
 	if (Owner->ActorHasTag(TEXT("ChunkEnemyActive")))
 	{
 		bActiveEnemy = true;
-		CachedKey = GetResolvedKey();
-		// 活体被销毁时上报（击杀 → 永久死亡）
-		Owner->OnDestroyed.AddDynamic(this, &UChunkEnemySpawnerComponent::OnOwnerDestroyed);
+		if (CachedKey.IsEmpty())
+		{
+			CachedKey = GetResolvedKey(); // 未由管理器指定时（理论上不会）用自身名兜底
+		}
+		// 击杀上报在 EndPlay 中完成（OnDestroyed 广播晚于组件 EndPlay，绑定会被自己解绑）
 		return;
 	}
 
@@ -123,41 +125,25 @@ void UChunkEnemySpawnerComponent::DeferredBeginPlay()
 
 void UChunkEnemySpawnerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// 记录销毁原因：只有"被 Destroy"（玩家击杀）才上报死亡；
-	// 世界/关卡切换销毁（Open Level、退出）不算击杀，不记死
-	bWorldTearDown = (EndPlayReason != EEndPlayReason::Destroyed);
-	if (AActor* Owner = GetOwner())
+	// 击杀上报：活体被 Destroy（玩家击杀）且活体标记仍在 → 记永久死亡。
+	// 世界/关卡切换销毁（Open Level/退出，reason 非 Destroyed）与
+	// 管理器回收（Destroy 前已移除活体标记）都不算击杀，不记死。
+	if (bActiveEnemy && EndPlayReason == EEndPlayReason::Destroyed)
 	{
-		Owner->OnDestroyed.RemoveDynamic(this, &UChunkEnemySpawnerComponent::OnOwnerDestroyed);
-	}
-	Super::EndPlay(EndPlayReason);
-}
-
-void UChunkEnemySpawnerComponent::OnOwnerDestroyed(AActor* DestroyedActor)
-{
-	// 只有活体被销毁时才上报（占位销毁是收编流程，不在这里处理）
-	if (!bActiveEnemy)
-	{
-		return;
-	}
-	// 世界/关卡切换销毁：不上报
-	if (bWorldTearDown)
-	{
-		return;
-	}
-	// 管理器回收销毁（标记已被移除）：不上报死亡
-	if (DestroyedActor && !DestroyedActor->ActorHasTag(TEXT("ChunkEnemyActive")))
-	{
-		return;
-	}
-	if (UChunkEnemyManager* Manager = GetManager())
-	{
-		if (!CachedKey.IsEmpty())
+		AActor* Owner = GetOwner();
+		if (Owner && Owner->ActorHasTag(TEXT("ChunkEnemyActive")))
 		{
-			Manager->MarkDead(CachedKey);
-			UE_LOG(LogTemp, Log, TEXT("[ChunkEnemy] 活体 %s 被销毁 → 记永久死亡"), *CachedKey);
+			if (UChunkEnemyManager* Manager = GetManager())
+			{
+				if (!CachedKey.IsEmpty())
+				{
+					Manager->MarkDead(CachedKey);
+					UE_LOG(LogTemp, Log, TEXT("[ChunkEnemy] 活体 %s 被击杀销毁 → 记永久死亡"), *CachedKey);
+				}
+			}
 		}
 	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void UChunkEnemySpawnerComponent::MarkAsDead()
@@ -176,6 +162,11 @@ void UChunkEnemySpawnerComponent::NotifyRespawned()
 {
 	OnEnemyRespawned.Broadcast();
 	UE_LOG(LogTemp, Log, TEXT("[ChunkEnemy] %s 重生事件已广播"), *CachedKey);
+}
+
+void UChunkEnemySpawnerComponent::SetSpawnKey(const FString& Key)
+{
+	CachedKey = Key;
 }
 
 namespace

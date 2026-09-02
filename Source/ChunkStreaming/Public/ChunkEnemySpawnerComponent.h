@@ -69,6 +69,9 @@ public:
 	/** 管理器在重生并写回状态后调用：广播 OnEnemyRespawned。 */
 	void NotifyRespawned();
 
+	/** 管理器生成活体后调用：继承占位注册的 Key（否则死亡上报找不到记录，敌人会"复活"）。 */
+	void SetSpawnKey(const FString& Key);
+
 	/** 把当前标记变量打包（管理器回收活体时自动调用；蓝图也可手动调用）。 */
 	UFUNCTION(BlueprintCallable, Category = "Chunk Enemy")
 	void CaptureState(UPARAM(ref) TArray<uint8>& OutBytes);
@@ -85,12 +88,10 @@ private:
 	void DeferredBeginPlay();
 
 	UFUNCTION()
-	void OnOwnerDestroyed(AActor* DestroyedActor);
 
 	UChunkEnemyManager* GetManager() const;
 	FString GetResolvedKey() const;
 
 	bool bActiveEnemy = false;
-	bool bWorldTearDown = false;
 	FString CachedKey;
 };
