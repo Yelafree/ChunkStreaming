@@ -58,6 +58,8 @@
 | 节点 | 说明 |
 |---|---|
 | `Get Chunk Streaming Subsystem` | 查询当前区块 / 玩家区块 / 加载状态 |
+| `Get Current Chunk Name` | 静态节点（右键直接搜索即可用）：查询玩家当前所在区块 |
+| `ChunkPlayerComponent`（挂玩家 Pawn） | 自带 `On Player Entered Chunk` 事件（进入新区块，可直接 Add Event）+ 查询节点 |
 | `Teleport To Chunk` | 异步预加载目标区块并瞬移 |
 | `Preload Teleport To Location` | 延迟式预加载传送（类似 Delay） |
 | `Reset Enemy States` | 重置全部敌人状态（死亡/数值/位置），关卡重启用 |

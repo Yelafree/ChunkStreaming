@@ -49,6 +49,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Chunk Streaming")
 	UChunkGraphAsset* GetGraphAsset() const { return GraphAsset; }
 
+	/**
+	 * 玩家当前所在区块的名字（静态节点，蓝图里右键可直接搜索，无需先取子系统）。
+	 * 玩家坐标不在任何区块内时返回 None。
+	 */
+	UFUNCTION(BlueprintPure, Category = "Chunk Streaming", meta = (WorldContext = "WorldContextObject", DisplayName = "Get Current Chunk Name"))
+	static FName GetCurrentChunkName(const UObject* WorldContextObject);
+
 	// ---- 事件（蓝图可绑定） ----
 
 	/** 玩家进入新区块（基于玩家坐标，含瞬移）。 */

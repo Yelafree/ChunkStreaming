@@ -171,6 +171,7 @@
 | 节点 | 返回 |
 |---|---|
 | `Get Player Chunk` | 玩家当前所在区块（玩家坐标） |
+| `Get Current Chunk Name`（静态节点） | 蓝图里右键直接搜索即可用的当前区块查询（无需先取子系统），返回玩家所在区块；不在任何区块内返回 None |
 | `Get Streaming Chunk` | 当前流送焦点区块（参考点 + 预加载；参考点默认相机，勾选 Pawn 选项后为玩家位置） |
 | `Is Chunk Loaded` | 区块是否已加载 |
 | `Get Graph Asset` | 图资产引用（可再查 Find Chunk At X 等） |
@@ -183,6 +184,8 @@
 | `On Player Exited Chunk (ChunkName, PreviousChunk)` | 玩家离开区块 |
 | `On Chunk Load Started (ChunkName)` | 区块开始异步加载 |
 | `On Chunk Load Finished (ChunkName)` | 区块加载完成（敌人状态已恢复） |
+
+> 提示：给玩家 Pawn 挂 **ChunkPlayerComponent** 组件后，组件自带 On Player Entered Chunk 事件（进入新区块，可直接 Add Event，无需手动绑定子系统委托）和 Get Current Chunk Name 查询节点；不挂组件也能用上面的静态查询节点与子系统委托。
 
 ### 瞬移节点
 

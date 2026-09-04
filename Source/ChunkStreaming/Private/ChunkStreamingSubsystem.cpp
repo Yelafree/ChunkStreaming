@@ -1130,6 +1130,17 @@ void UChunkStreamingSubsystem::UnregisterPendingPreload(FName ChunkName)
 	PendingPreloadChunks.Remove(ChunkName);
 }
 
+FName UChunkStreamingSubsystem::GetCurrentChunkName(const UObject* WorldContextObject)
+{
+	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull) : nullptr;
+	UChunkStreamingSubsystem* Sub = World ? World->GetSubsystem<UChunkStreamingSubsystem>() : nullptr;
+	if (!Sub)
+	{
+		return NAME_None;
+	}
+	return Sub->GetPlayerChunk();
+}
+
 void UChunkStreamingSubsystem::TeleportToChunk(const UObject* WorldContextObject, FName TargetChunk, FVector TargetLocation)
 {
 	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull) : nullptr;
