@@ -1028,6 +1028,11 @@ public:
 					Timeout, *Chunk.ToString());
 			}
 			A->SetActorLocation(Location, /*bSweep*/ false, /*OutHit*/ nullptr, ETeleportType::TeleportPhysics);
+			if (!Chunk.IsNone())
+			{
+				// 传送完成：立即同步玩家区块并广播进入事件（不等轮询）
+				S->NotifyPlayerTeleported(Chunk);
+			}
 			Finish(Response);
 		}
 	}
@@ -1090,6 +1095,11 @@ void UChunkStreamingSubsystem::PreloadTeleportToLocation(const UObject* WorldCon
 	{
 		// 没有区块或目标区块已加载：立即传送并立即完成延迟节点
 		Actor->SetActorLocation(TargetLocation, /*bSweep*/ false, /*OutHit*/ nullptr, ETeleportType::TeleportPhysics);
+		// 立即同步玩家区块并广播进入事件（同区块传送也广播，PreviousChunk == ChunkName）
+		if (!TargetChunk.IsNone())
+		{
+			Sub->NotifyPlayerTeleported(TargetChunk);
+		}
 		if (LatentInfo.CallbackTarget)
 		{
 			if (UFunction* ExecFn = LatentInfo.CallbackTarget->FindFunction(LatentInfo.ExecutionFunction))
@@ -1195,6 +1205,18 @@ void UChunkStreamingSubsystem::TeleportToChunk(const UObject* WorldContextObject
 	}
 }
 
+void UChunkStreamingSubsystem::NotifyPlayerTeleported(FName TargetChunk)
+{
+	const FName Old = PlayerChunk;
+	PlayerChunk = TargetChunk;
+	if (Old != TargetChunk)
+	{
+		OnPlayerExitedChunk.Broadcast(Old, TargetChunk);
+	}
+	// 同区块传送也广播进入（PreviousChunk == ChunkName，蓝图可据此判断"传送刷新"）
+	OnPlayerEnteredChunk.Broadcast(TargetChunk, Old);
+}
+
 void UChunkStreamingSubsystem::CompleteTeleport()
 {
 	const FName Target = PendingTargetChunk;
@@ -1238,14 +1260,8 @@ void UChunkStreamingSubsystem::CompleteTeleport()
 		}
 	}
 
-	// 同步区块状态与事件
-	if (PlayerChunk != Target)
-	{
-		const FName Old = PlayerChunk;
-		PlayerChunk = Target;
-		OnPlayerExitedChunk.Broadcast(Old, PlayerChunk);
-		OnPlayerEnteredChunk.Broadcast(PlayerChunk, Old);
-	}
+	// 同步区块状态与事件（同区块传送也广播进入，PreviousChunk == ChunkName）
+	NotifyPlayerTeleported(Target);
 	StreamingChunk = Target;
 	HysteresisCandidate = NAME_None;
 	HysteresisTimer = 0.f;

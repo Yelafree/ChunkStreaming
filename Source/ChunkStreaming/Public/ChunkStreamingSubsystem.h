@@ -109,6 +109,14 @@ public:
 	/** 当前活动的流送子系统（供模块级控制台命令使用）。 */
 	static UChunkStreamingSubsystem* GetActive();
 
+	/**
+	 * 传送完成后同步玩家区块并广播进入事件（供传送类节点调用）。
+	 * - 跨区块：先广播 OnPlayerExitedChunk 再广播 OnPlayerEnteredChunk
+	 * - 同区块传送：也会广播 OnPlayerEnteredChunk（PreviousChunk == ChunkName，
+	 *   蓝图可用两者是否相等区分"真正进入新区块"与"传送刷新"）
+	 */
+	void NotifyPlayerTeleported(FName TargetChunk);
+
 	/** 解析坐标所在的区块（不在任何范围内时取最近玩法区块）。 */
 	FName ResolveChunkAtLocation(const FVector& Location) const;
 
